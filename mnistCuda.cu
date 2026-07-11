@@ -88,7 +88,7 @@ int main(void){
 	srand(time(NULL)); //Inicializamos el generador aleatorio de numeros
 	float ValorDigitos[10]; //Guardara el procentaje de probabilidad de cada uno de los digitos
 	float Pesos[10*TAMANO]; //Guardara los pesos de cada uno de los 784 pixeles de la imagen para cada uno de los digitos, lo almacenamos en una matriz aplanada para poder usar la gpu
-	static unsigned char Imagen[TAMANO*IMAGENES]; //Guardara el valor de los pixeles de la imagen original, debe ser static para no desbordar el tamaño preestablecido por linux de 8MiB
+	static unsigned char Imagen[TAMANO*IMAGENES]; //Guardara el valor de los pixeles de la imagen original, debe ser static para no desbordar el tamaño preestablecido por linux de 8MiB, o usar memoria dinamica con malloc
 	unsigned char respuesta[IMAGENES]; //Guardara la respuesta real de la imagen analizada, lo necesitamos para comparar
 	
 	//Abrimos el archivo de entrenamiento, lo abrimos en lectura binaria
@@ -139,7 +139,7 @@ int main(void){
 		while (limite < IMAGENES){
 
 			//Aplicamos los pesos a los pixeles de la imagen, para eso llamamos a la funcion AplicarPesos que se ejcutara directamente en la gpu
-			AplicarPesos<<<10, TAMANO>>>(dValorDigitos, dPesos, dImagen, TAMANO, limite); //Esta funcion, en lugar de ser de 10*784 iteraciones (es decir, 7840 iteraciones), sera de 784 iteraciones, ya que se ejecutan los 10 digitos en paralelo
+			AplicarPesos<<<10, TAMANO>>>(dValorDigitos, dPesos, dImagen, TAMANO, limite); //Esta funcion, en lugar de ser de 10*784 iteraciones (es decir, 7840 iteraciones), sera mucho menor debido a la programacion paralela que ofrece cuda
 			cudaDeviceSynchronize(); //Por defecto, la cpu tras llamar a un kernel de CUDA, continuara con la siguiente linea, al ser una ejecucion asincrona, asi que obligamos a que se espere
 		
 			//Recuperamos las probabilidades de cada digito. Estan en la GPU y los necesitamos en la CPU
@@ -149,7 +149,8 @@ int main(void){
 			unsigned char Probable = MasProbable(ValorDigitos);
 			printf("El digito de la imagen es %hhu, con una seguridad del %f; ", Probable, ValorDigitos[Probable]*100);
 			printf("La respuesta real era %hhu \n", respuesta[limite]);
-			//Corregimos los pesos, necesitamos simplemente un bloque de 10 hilos, igual que en el caso anterior
+
+			//Corregimos los pesos, necesitamos simplemente un 10 bloques de 784 hilos, igual que en el caso anterior
 			CorregirPesos<<<10, TAMANO>>>(dValorDigitos, dPesos, dImagen, dRespuestas, APRENDIZAJE, TAMANO, limite);
 			cudaDeviceSynchronize();
 			
