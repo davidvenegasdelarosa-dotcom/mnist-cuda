@@ -1,1 +1,1 @@
-![Resultado del entrenamiento](mnistCuda.png)
+![Resultado del entrenamiento](capturaMnist.png)
