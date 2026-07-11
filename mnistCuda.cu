@@ -8,10 +8,10 @@
 
 //Funcion auxiliar con CUDA que aplica los pesos correspondientes segun los pixeles de la imagen
 __global__ void AplicarPesos (float* ValorDigitos, float* Pesos, unsigned char * Imagen, int tamano, int actual){
-	//Como tenemos 10 digitos, lanzaremos 10 hilos en paralelo, cada uno de ellos calculara la probabilidad de un solo digito
+	//Lanzamos 10 bloques, uno para cada digito, con 784 hilos, uno para cada pixel de su respectiva imagen
 	int pixel = threadIdx.x;
 	int digito =  blockIdx.x;
-	__shared__ float sumatorioCompartido[TAMANO];
+	__shared__ float sumatorioCompartido[TAMANO]; //Usamos memoria compartida en cada bloque, asi cada hilo puede ver la memoria de todo el bloque al que pertenece
 	if (pixel < tamano){
 		//Cada hilo hace su propio calculo
 		int indicePeso = digito*tamano+pixel;
@@ -20,7 +20,7 @@ __global__ void AplicarPesos (float* ValorDigitos, float* Pesos, unsigned char *
 		sumatorioCompartido[pixel] = Pesos[indicePeso] * pixelNormalizado;
 	} else sumatorioCompartido[pixel] = 0.0f; //Para controlar el error de lanzar mas hilos
 	
-	__syncthreads();
+	__syncthreads(); //Esperamos que todos los hilos lleguen al mismo punto
 	
 	//Hacemos una suma en arbol
 	for(int i = blockDim.x/2; i > 0; i >>=1) {
@@ -38,11 +38,11 @@ __global__ void AplicarPesos (float* ValorDigitos, float* Pesos, unsigned char *
 
 //Funcionn auxiliar con CUDA para corregir los pesos de todos los digitos tras comparar con el correcto
 __global__ void CorregirPesos(float * ValorDigitos, float * Pesos, unsigned char * Imagen, unsigned char * respuesta, float Aprendizaje, int tamano, int actual){
-	//Como tenemos 10 digitos, lanzaremos 10 hilos
+	//Lanzamos los mismos bloques e hilos que en el anterior kernel
 	int digito = blockIdx.x;
 	int pixel = threadIdx.x;
 	if(digito < 10){
-		float error = (digito == respuesta[actual]) ? ValorDigitos[digito]-1 : ValorDigitos[digito]; // El error no sera el mismo para el digito correfcto en comparacion con un digito distinto, debemos diferenciar el caso
+		float error = (digito == respuesta[actual]) ? ValorDigitos[digito]-1 : ValorDigitos[digito]; // El error no sera el mismo para el digito correcto en comparacion con un digito distinto, debemos diferenciar el caso
 		float pixelNormalizado = (float)Imagen[actual*tamano+pixel]/255.0f;
 		Pesos[digito*tamano+pixel] -= (Aprendizaje*error*pixelNormalizado);
 	}
@@ -83,11 +83,14 @@ void MostrarProgreso(int actual){
 
 
 int main(void){
+
+	//Creamos las variables
 	srand(time(NULL)); //Inicializamos el generador aleatorio de numeros
 	float ValorDigitos[10]; //Guardara el procentaje de probabilidad de cada uno de los digitos
 	float Pesos[10*TAMANO]; //Guardara los pesos de cada uno de los 784 pixeles de la imagen para cada uno de los digitos, lo almacenamos en una matriz aplanada para poder usar la gpu
 	static unsigned char Imagen[TAMANO*IMAGENES]; //Guardara el valor de los pixeles de la imagen original, debe ser static para no desbordar el tamaño preestablecido por linux de 8MiB
 	unsigned char respuesta[IMAGENES]; //Guardara la respuesta real de la imagen analizada, lo necesitamos para comparar
+	
 	//Abrimos el archivo de entrenamiento, lo abrimos en lectura binaria
 	FILE * Imagenes =  fopen("train-images-idx3-ubyte", "rb");
 	//Hacemos exactamente lo mismo con el de las respuestas
@@ -150,13 +153,13 @@ int main(void){
 			CorregirPesos<<<10, TAMANO>>>(dValorDigitos, dPesos, dImagen, dRespuestas, APRENDIZAJE, TAMANO, limite);
 			cudaDeviceSynchronize();
 			
-			//MostrarProgreso(limite); //Imprimimos por pantalla el progreso del entrenamiento, lo hacemos en un caso especifico para que no lo haga siempre y asi no ralentice el programa
+			//MostrarProgreso(limite); //Imprimimos por pantalla el progreso del entrenamiento
 			limite++;
 		}
 		
-		cudaDeviceSynchronize();
+		cudaDeviceSynchronize(); //No podemos liberar datos de la gpu si aun no hemos terminado de procesarlaos en lineas anteriores
 
-		//Liberamos la memoria de la GPU y cerramos los archivos
+		//Liberamos la memoria de la GPU
 		cudaFree(dImagen);
 		cudaFree(dValorDigitos);
 		cudaFree(dPesos);
